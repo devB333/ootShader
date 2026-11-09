@@ -1,0 +1,27 @@
+GPU0:
+VkPhysicalDeviceProperties:
+	driverVersion     = 2.0.331 (8388939)
+	deviceType        = PHYSICAL_DEVICE_TYPE_DISCRETE_GPU
+	deviceName        = Example GPU
+	VK_EXT_color_write_enable                   : extension revision 1
+	VK_EXT_extended_dynamic_state               : extension revision 1
+	VK_EXT_extended_dynamic_state2              : extension revision 1
+	VK_EXT_extended_dynamic_state3              : extension revision 2
+	VK_EXT_vertex_input_dynamic_state           : extension revision 2
+	driverID                                             = DRIVER_ID_AMD_PROPRIETARY
+VkPhysicalDeviceColorWriteEnableFeaturesEXT:
+	colorWriteEnable = true
+VkPhysicalDeviceExtendedDynamicState2FeaturesEXT:
+	extendedDynamicState2                   = true
+	extendedDynamicState2LogicOp            = false
+VkPhysicalDeviceExtendedDynamicState3FeaturesEXT:
+	extendedDynamicState3DepthClampEnable                 = true
+	extendedDynamicState3LogicOpEnable                    = true
+	extendedDynamicState3AlphaToCoverageEnable            = true
+	extendedDynamicState3ColorBlendEnable                 = true
+	extendedDynamicState3ColorBlendEquation               = true
+	extendedDynamicState3ColorWriteMask                   = true
+VkPhysicalDeviceExtendedDynamicStateFeaturesEXT:
+	extendedDynamicState = true
+VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT:
+	vertexInputDynamicState = true

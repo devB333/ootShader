@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+work*/
+out/
+*.bin
+!hints/*.hints
+winbuild/dl/
+winbuild/bin*/
+winbuild/*-win64/
+winbuild/*.zip

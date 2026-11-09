@@ -1,0 +1,20 @@
+Notices
+=======
+SCB-OOT is distributed under the GNU General Public License v3 or later (LICENSE-GPL-3.0.txt)
+because it contains code from the Lichii project (https://github.com/zortos293/Lichii), itself a fork of
+Eden/yuzu:
+  - lichii\tools\nx2\extract_static_shaders.py, shader_archive.py, shader_containers.py (unchanged copies)
+  - bin\hash_dump.exe and bin\compute_hash.exe, built from source\harness\*.cpp together with Lichii's
+    src\video_core\shader_warm\warm_records.cpp and src\common\cityhash.cpp (compiled with zig c++ 0.17.1,
+    target x86_64-windows-gnu, static). Source of the harness is in source\harness. The Lichii files are
+    available from the Lichii repository.
+  - python\ is the unmodified Windows embeddable package of Python 3.14.9 from python.org
+    (PSF license), only python314._pth is edited.
+
+hints\combined.hints contains pipeline states, shader hashes and values the emulator recorded (constant-buffer
+values, texture types and formats). It contains no shader instructions. It combines a recording made on an
+NVIDIA machine with one made on an AMD machine (mostly records converted from the NVIDIA recording; about
+2,700 records plus 57 extra were recorded on AMD).
+
+The temporary folder SCB-OOT creates while it runs contains shader code extracted from your game. It is deleted at the end; do not share it.
+This is not affiliated with Nintendo or the Lichii authors.
