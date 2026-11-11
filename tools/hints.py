@@ -230,6 +230,11 @@ def rebuild(records, store, machine):
                 if (h[1] ^ x) in ts:
                     codes = [store.meshcode(v ^ x) if i in (1, 3) else store.gfx(v) for i, v in enumerate(h) if v]
                     break
+        elif h[1] and not h[3] and store.mesh and metas and struct.unpack_from('<I', metas[0], ENV_HDR - 4)[0] == cc.STAGE_MESH:
+            # Mesh shader without a task shader: it sits in the VertexB slot, keyed with hash ^ MeshStateHash.
+            # The mesh environment ends with what that hash covers (3 mesh registers + 20 header words).
+            x = city_hash64(metas[0][-92:]) | 1
+            codes = [store.meshcode(v ^ x) if i == 1 else store.gfx(v) for i, v in enumerate(h) if v]
         else:
             codes = [store.gfx(v) for v in slots]
         if codes is None or any(c is None for c in codes) or len(codes) != len(metas):
