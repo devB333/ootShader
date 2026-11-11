@@ -91,6 +91,9 @@ def build(lichii, binary_dir, prebuilt=None):
     src = os.path.join(lichii, 'src')
     common = ['g++', '-std=c++20', '-O2', '-I' + os.path.join(ROOT, 'harness', 'stub'), '-I' + src]
     libs = [os.path.join(src, 'video_core', 'shader_warm', 'warm_records.cpp'), os.path.join(src, 'common', 'cityhash.cpp')]
+    lowering = os.path.join(src, 'video_core', 'native_lowering.cpp')   # newer Lichii: LowerNativeProgram moved out of warm_records.cpp
+    if os.path.exists(lowering):
+        libs.append(lowering)
     for tool in ('hash_dump', 'compute_hash'):
         subprocess.run(common + [os.path.join(ROOT, 'harness', tool + '.cpp')] + libs + ['-o', os.path.join(binary_dir, tool + EXE)], check=True)
 
