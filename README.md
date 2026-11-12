@@ -1,4 +1,22 @@
 # SCB-OOT
+### This fork added 
+- **More pipelines rebuilt.** Mesh pipelines that have no task shader are now rebuilt: 32,912 of the
+  32,927 pipelines in the hints, up from 32,429. The 15 left are compute pipelines whose shaders the
+  extractor cannot read.
+- **Fritchii v5.8.x support.** `--emulator fritchii` (or `scb-oot-fritchii.bat` in the Windows bundle)
+  installs the cache in Fritchii's own data folder, where Fritchii merges it at start.
+- **A diagnostic tool.** `tools/diagnose_missing.py` reports every skipped pipeline: which shader is
+  missing, where it likely is in the game files, and why it could not be rebuilt.
+- **Ready-to-use Windows bundle.** A GitHub Actions workflow builds `scb-oot-win64.zip` with its own
+  Python and the helper programs, so nothing needs to be installed. See Releases.
+- **One-command setup from source.** `./setup.sh` fetches the Lichii sources the tools build against.
+- **Building a cache for another PC** from a saved `vulkaninfo` file, documented below.
+- **Fixes.** `vulkaninfo` output saved from PowerShell (UTF-16) is read correctly, and the helper
+  programs compile against newer emulator source (Lichii build-160, Fritchii v5.8.4).
+- **Experimental.** Cache targets for the older `nx2` branch of Fritchii (`fritchii-nx2`,
+  `fritchii-nx2-mesh`).
+
+  <hr>
 
 **Shader Cache Builder for The Legend of Zelda: Ocarina of Time Remake (Switch 2)**, for the Lichii and Eden
 emulators.
