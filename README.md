@@ -74,6 +74,29 @@ python3 tools/scb_oot.py --nup game.nup --lichii /path/to/Lichii-build-125 \
 With the helpers built against v5.8.4 (commit 4f5c531) the same 32,912 of 32,927 pipelines are rebuilt as with
 Lichii build-125. Run the emulator once first so the folder exists. Not yet loaded in a v5.8.4 build.
 
+### Building the cache for another PC
+
+The cache is stamped for one graphics driver, so a file made for one PC is ignored on another. You can still build
+it here for the other PC; that PC needs no Python, compiler or WSL. Both PCs must use the same game update.
+
+1. On the other PC, in PowerShell: `vulkaninfo > vkinfo-otherpc.txt`. Copy that file to this PC.
+2. On this PC, build into a folder of its own instead of the emulator's:
+
+   ```
+   mkdir -p out/otherpc
+   python3 tools/scb_oot.py --nup /path/to/game.nup --lichii /path/to/Lichii-build-125 \
+       --cache-dir out/otherpc/0400486024dec000 --vulkaninfo-file /path/to/vkinfo-otherpc.txt
+   ```
+
+3. Copy `out/otherpc/0400486024dec000/vulkan.fork-v54.bin` (about 1.5 GB) to the other PC, into
+   `%APPDATA%\fritchii\cache\shader\0400486024dec000\` for Fritchii v5.8.x, or
+   `%APPDATA%\eden\cache\shader\0400486024dec000\` for Lichii. Close the emulator first, and start it once
+   beforehand so the folder exists.
+4. Make it again after a graphics driver update on that PC (the driver version is part of the stamp).
+
+On NVIDIA, also set Shader Cache Size to Unlimited (NVIDIA Control Panel, Manage 3D settings): Fritchii's own
+"Prepare Shaders" step depends on it, see its `tools/nx2-precompile/README.md`.
+
 The sections below are about the older `nx2` branch of the Fritchii repository (cache version 50), which the
 releases are not built from.
 
