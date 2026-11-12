@@ -1,6 +1,6 @@
 __pycache__/
 *.pyc
-work*/
+/work*/
 out/
 *.bin
 !hints/*.hints
@@ -9,3 +9,6 @@ winbuild/bin*/
 winbuild/*-win64/
 winbuild/*.zip
 fritchi/
+/lichii/
+/bin/
+/lichii-src/

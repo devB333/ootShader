@@ -27,8 +27,14 @@ CACHE_NAME = 'vulkan.fork-v54.bin'
 USED_NAME = 'vulkan_used.fork-v54.bin'
 # Fritchii reads cache version 50: other file name, older record layout, no task/mesh pipelines, and its own
 # (older) shader lowering, so the code store must be built with --lowering-src <Fritchii>/src.
-# fritchii-mesh: a Fritchii build with the task/mesh cache patch (cache version 150), which also stores those pipelines.
-TARGETS = {'lichii': 54, 'fritchii': 50, 'fritchii-mesh': 150}
+# Target emulator: (cache version, data folder under %APPDATA% or the XDG data folder, needs --lowering-src).
+#   lichii        Lichii and Eden: vulkan.fork-v54.bin in the "eden" folder.
+#   fritchii      Fritchii releases (v5.8.x): the same cache, in the "fritchii" folder. Fritchii merges
+#                 vulkan.fork-v54.bin into its own vulkan-frizti.fork-v54.bin at start.
+#   fritchii-nx2  the older nx2 branch of the Fritchii repository (cache version 50, no task/mesh pipelines).
+#   fritchii-nx2-mesh  that branch with the task/mesh cache patch (cache version 150).
+TARGETS = {'lichii': (54, 'eden', False), 'fritchii': (54, 'fritchii', False),
+           'fritchii-nx2': (50, 'eden', True), 'fritchii-nx2-mesh': (150, 'eden', True)}
 EMULATORS = ('lichii.exe', 'fritchii.exe', 'fritchii', 'eden.exe', 'eden-cli.exe', 'yuzu.exe', 'yuzu-cmd.exe', 'lichii', 'eden', 'yuzu')
 
 
@@ -56,14 +62,14 @@ def check_nup(path):
     say(f'game file OK: {GAME}, update {UPDATE}')
 
 
-def default_cache_dir():
+def default_cache_dir(folder='eden'):
     if os.name == 'nt':
         base = os.environ.get('APPDATA')
         if not base:
             fail('cannot find %APPDATA%; pass --cache-dir')
-        return os.path.join(base, 'eden', 'cache', 'shader', TITLE)
+        return os.path.join(base, folder, 'cache', 'shader', TITLE)
     base = os.environ.get('XDG_DATA_HOME') or os.path.join(os.path.expanduser('~'), '.local', 'share')
-    return os.path.join(base, 'eden', 'cache', 'shader', TITLE)
+    return os.path.join(base, folder, 'cache', 'shader', TITLE)
 
 
 def emulator_running():
@@ -72,7 +78,11 @@ def emulator_running():
             out = subprocess.run(['tasklist', '/FO', 'CSV', '/NH'], capture_output=True, text=True, errors='replace').stdout.lower()
             return [e for e in EMULATORS if e.endswith('.exe') and f'"{e}"' in out]
         out = subprocess.run(['ps', '-A', '-o', 'comm='], capture_output=True, text=True, errors='replace').stdout.split()
-        return [e for e in EMULATORS if not e.endswith('.exe') and e in out]
+        found = [e for e in EMULATORS if not e.endswith('.exe') and e in out]
+        if shutil.which('tasklist.exe'):                         # WSL: the emulator is a Windows program
+            win = subprocess.run(['tasklist.exe', '/FO', 'CSV', '/NH'], capture_output=True, text=True, errors='replace').stdout.lower()
+            found += [e for e in EMULATORS if e.endswith('.exe') and f'"{e}"' in win]
+        return found
     except OSError:
         return []
 
@@ -130,19 +140,20 @@ def main():
     ap.add_argument('--bin-dir', default=os.path.join(ROOT, 'bin'), help='ready-made lowering programs (bundled by default)')
     ap.add_argument('--extractor-python', default=sys.executable)
     ap.add_argument('--emulator', choices=sorted(TARGETS), default='lichii',
-                    help='emulator to build the cache for (default lichii). fritchii: stock Fritchii, cache version 50, no task/mesh '
-                    'pipelines. fritchii-mesh: Fritchii built with the task/mesh cache patch, cache version 150')
-    ap.add_argument('--lowering-src', help='with --emulator fritchii or fritchii-mesh: the src folder of your Fritchii checkout '
+                    help='emulator to build the cache for: lichii (default, also Eden), fritchii (Fritchii v5.8.x releases: same '
+                    'cache, installed in the fritchii data folder), fritchii-nx2 / fritchii-nx2-mesh (the older nx2 branch of '
+                    'Fritchii, cache versions 50 / 150; they need --lowering-src)')
+    ap.add_argument('--lowering-src', help='with --emulator fritchii-nx2 or fritchii-nx2-mesh: the src folder of that Fritchii checkout '
                     '(its shader lowering decides the shader hashes); --lichii must then be Lichii build-125')
     H.machine_args(ap)
     a = ap.parse_args()
-    version = TARGETS[a.emulator]
+    version, data_folder, needs_lowering = TARGETS[a.emulator]
     cache_name, used_name = (n.replace('v54', f'v{version}') for n in (CACHE_NAME, USED_NAME))
-    if a.emulator != 'lichii':
+    if needs_lowering:
         if not a.lowering_src:
             fail(f'--emulator {a.emulator} needs --lowering-src <Fritchii checkout>/src (and --lichii <Lichii build-125>).')
         if a.fast_start is not None:
-            fail('--fast-start is not supported for Fritchii.')
+            fail('--fast-start is not supported for this target.')
         a.lowering_src = os.path.abspath(a.lowering_src)
 
     say(f'SCB-OOT: Shader Cache Builder for {GAME}\n')
@@ -157,7 +168,7 @@ def main():
         fail(f'the hints are for title {head.get("title_id")}, cache version {head.get("cache_version")}; need {TITLE}, 54')
     say(f'hints OK: {len(records)} pipelines')
 
-    cache_dir = os.path.abspath(a.cache_dir) if a.cache_dir else default_cache_dir()
+    cache_dir = os.path.abspath(a.cache_dir) if a.cache_dir else default_cache_dir(data_folder)
     if not os.path.isdir(os.path.dirname(cache_dir)):
         fail(f'the emulator cache folder {os.path.dirname(cache_dir)} does not exist.\n'
              '  Start the emulator once, or pass --cache-dir with the right folder.')

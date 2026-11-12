@@ -24,7 +24,7 @@ static std::vector<u8> slurp(const std::string& p) {
 }
 int main(int argc, char** argv) {
     std::ifstream list(argv[1]); std::string line;
-    FILE* out = argc > 2 ? std::fopen(argv[2], "wxb") : nullptr;
+    FILE* out = argc > 2 ? std::fopen(argv[2], "wb") : nullptr;
     if (out) { std::fwrite("yuzucach", 1, 8, out); u32 v = 54; std::fwrite(&v, 4, 1, out); }
     while (std::getline(list, line)) {
         auto t = line.find('\t');

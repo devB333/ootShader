@@ -5,11 +5,11 @@ because it contains code from the Lichii project (https://github.com/zortos293/L
 Eden/yuzu:
   - lichii\tools\nx2\extract_static_shaders.py, shader_archive.py, shader_containers.py (unchanged copies)
   - bin\hash_dump.exe and bin\compute_hash.exe, built from source\harness\*.cpp together with Lichii's
-    src\video_core\shader_warm\warm_records.cpp and src\common\cityhash.cpp (compiled with zig c++ 0.17.1,
-    target x86_64-windows-gnu, static). Source of the harness is in source\harness. The Lichii files are
-    available from the Lichii repository.
-  - python\ is the unmodified Windows embeddable package of Python 3.14.9 from python.org
-    (PSF license), only python314._pth is edited.
+    src\video_core\shader_warm\warm_records.cpp and src\common\cityhash.cpp of Lichii build-125 (compiled
+    with MinGW-w64 g++, static). Source of the harness is in source\harness. The Lichii files are
+    available from the Lichii repository (tag build-125).
+  - python\ is the unmodified Windows embeddable package of Python 3.14 from python.org
+    (PSF license), only its ._pth file is edited.
 
 hints\combined.hints contains pipeline states, shader hashes and values the emulator recorded (constant-buffer
 values, texture types and formats). It contains no shader instructions. It combines a recording made on an
