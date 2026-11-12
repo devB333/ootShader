@@ -3,9 +3,9 @@ SCB-OOT: Shader Cache Builder for The Legend of Zelda: Ocarina of Time Remake
 
 What it does
   Builds a Vulkan shader cache for YOUR PC from your own game file (.nup) plus a small "hints" file
-  (1.4 MB, no game code inside). Meant for Lichii and Eden (cache file vulkan.fork-v54.bin,
-  cache version 54). The cache is written for your graphics card and driver, whatever card the
-  hints were recorded on. The goal is fewer shader stutters the first time you play.
+  (1.4 MB, no game code inside). Meant for Lichii, Eden and Fritchii v5.8.x (cache file
+  vulkan.fork-v54.bin, cache version 54). The cache is written for your graphics card and driver,
+  whatever card the hints were recorded on. The goal is fewer shader stutters the first time you play.
 
 Supported
   Only The Legend of Zelda: Ocarina of Time Remake (Switch 2), title 0400486024dec000,
@@ -13,7 +13,10 @@ Supported
 
 How to use
   1. Close the emulator.
-  2. Double-click scb-oot.bat (or drag your game .nup file onto it) and follow the questions.
+  2. Lichii or Eden: double-click scb-oot.bat (or drag your game .nup file onto it) and follow
+     the questions. Fritchii v5.8.x: use scb-oot-fritchii.bat instead; it installs into
+     %APPDATA%\fritchii\cache\shader\0400486024dec000\ and Fritchii merges the file into its own
+     cache at the next start. Run the emulator with the game once beforehand so that folder exists.
      It checks the game file, rebuilds the shader code locally (1 to 10 minutes, depending on
      antivirus scanning; nothing leaves your PC), builds the cache for your graphics driver, backs up the cache you already have,
      and installs the new one in %APPDATA%\eden\cache\shader\0400486024dec000\
@@ -42,12 +45,16 @@ Safety
   - It reads your .nup and never changes it.
 
 Limits
-  - Tested on one PC (Windows 11, RX 6700 XT, Lichii builds 119 and 125). A wrong graphics-driver
+  - Tested on few PCs (Windows 11; RX 6700 XT and RTX 4070 Ti; Lichii builds 119 and 125, Fritchii v5.8.4). A wrong graphics-driver
     stamp makes the emulator silently ignore the cache. If the emulator seems not to use it, compare
     the "Report: Driver:" lines of its log with what this tool printed.
   - A new emulator version may change the cache format; then this needs an update.
-  - About 500 of the 32,900 pipelines (1.5 percent) need shaders that the game files do not
-    reproduce. They are skipped and built when the game first needs them.
+  - 15 of the 32,927 pipelines (compute shaders the game files do not reproduce) are skipped and
+    built when the game first needs them.
+  - NVIDIA: set Shader Cache Size to Unlimited (NVIDIA Control Panel, Manage 3D settings). With the
+    default size the driver keeps only part of what the emulator compiles.
+  - A portable emulator (a "user" folder next to its exe) keeps its cache there: pass
+    --cache-dir "<that folder>\cache\shader\0400486024dec000".
   - The hints only cover pipelines that someone played, so some hitches remain.
   - The two .exe helpers are not code-signed; Windows may warn about them.
 

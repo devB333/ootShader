@@ -4,6 +4,7 @@
 * `convert_cache.py`: re-stamp a cache written on another GPU (below).
 * `hints.py`: code-free hints, export, merge, import (further below).
 * `build_code_store.py`: regenerate the shader code of a game from its `.nup`.
+* `diagnose_missing.py`: explains every pipeline the importer skips (which shader, where it is, why).
 * `cityhash.py`: pure Python CityHash64 matching Lichii's, used for pipeline key hashes.
 
 # convert_cache.py
@@ -113,6 +114,23 @@ Verified (Ocarina of Time update 131072, RX 6700 XT; code store built fresh from
 515 need shaders that the game files do not reproduce and are skipped. With the combined hints (NVIDIA and AMD)
 and the fresh store: 32,463 of 32,965 rebuilt (skipped: 485 graphics, 17 compute); all 32,410 that also exist in
 the cache Lichii accepted are byte-identical.
+
+Since then the importer also rebuilds mesh pipelines without a task shader (the skipped graphics pipelines
+above): with the bundled hints and a store built against Lichii `build-125`, 32,912 of 32,927 are rebuilt and
+15 compute pipelines are skipped. For the newly rebuilt records the code hash, code size and native header
+match the recorded ones; they have not been compared with a cache the emulator wrote, or loaded in it.
+
+# diagnose_missing.py: why a pipeline is skipped
+
+```
+python3 diagnose_missing.py --nup game.nup --lichii <Lichii clone> --work <folder>
+```
+
+Builds the code store in `<folder>` when it does not exist (or reuses a `build_code_store.py` folder) and
+writes `out/missing_shaders.log` and `out/missing_shaders.tsv`: per skipped pipeline the missing slot, its
+real hash (for task/mesh: keyed hash ^ MeshStateHash), the recorded code size, the extracted program it most
+likely is and what happened to it (lowering error, or lowered to other code), the containers the extractor
+could not read, and shader containers in the `.nup` that are not read at all.
 
 Limits: hints only cover pipelines that someone played. Hints contain pipeline state and recorded reads
 but no instructions; whether to share them is the exporter's decision.

@@ -35,6 +35,20 @@ class T(unittest.TestCase):
         self.assertEqual(H.city_hash64(b''), H.city_hash64(b''))        # imported and callable
         self.assertEqual(H.key_hash(key), H.city_hash64(key[:48 + 112]))
 
+    def test_cache_version_50(self):
+        def meta(stage, cbuf_keys, tail):
+            body = b''.join(struct.pack('<QI', k, 7) for k in cbuf_keys)
+            return struct.pack('<6Q7I', 16, 0, 0, len(cbuf_keys), 0, 0, 0, 0, 0, 0, 8, 1, stage) + body + tail
+        with_entry = meta(4, [5, H.READ_PROPERTIES_KEY], b'S' * 80)
+        self.assertEqual(H.legacy_meta(with_entry), meta(4, [5], b'S' * 80))
+        self.assertEqual(H.legacy_meta(meta(0, [5], b'S' * 80)), meta(0, [5], b'S' * 80))
+        state = H.normalize_state(bytes(H.STATE_SIZE))
+        recs = {('g', ((0, 11, 0, 0, 0, 22), state)): [meta(8, [], b'S' * 172), meta(4, [], b'S' * 80)]}
+        store = H.CodeStore(None, None, None)
+        self.assertEqual([r[1] for r in H.rebuild(recs, store, (1, 2, 3), 50)], [H.NOT_STORED])
+        with self.assertRaises(H.HintError):
+            list(H.rebuild(recs, store, (1, 2, 3), 51))
+
     def test_rejects_other_files(self):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, 'bad')

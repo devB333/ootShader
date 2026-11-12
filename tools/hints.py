@@ -210,9 +210,36 @@ class CodeStore:
         return open(os.path.join(self.mesh_dir, f'{h:016x}.bin'), 'rb').read() if h in self.mesh else None
 
 
-def rebuild(records, store, machine):
-    """Yield (record bytes, why, identity) for every record; None bytes when the shaders cannot be regenerated."""
+STORE_VERSION = 54                        # header of the generated compute records (harness/compute_hash.cpp)
+LEGACY_VERSION = 50                       # Fritchii: no task/mesh pipelines, no read-properties entry
+LEGACY_MESH_VERSION = 150                 # Fritchii with the task/mesh cache patch: version 50 plus the mesh registers
+READ_PROPERTIES_KEY = 0xFFFFFFFF00000000  # MakeCbufKey(~0U, 0): written after the constant buffer values since version 52
+NOT_STORED = 'task/mesh pipeline (cache version 50 does not store them)'
+
+
+def legacy_meta(meta):
+    """The environment as cache version 50 lays it out: without the read-properties entry."""
+    size, nt, npf, ncb, nsp, nrc = struct.unpack_from('<6Q', meta, 0)
+    start = ENV_HDR + nt * 8 + npf * 8
+    for i in range(ncb):
+        at = start + i * 12
+        if struct.unpack_from('<Q', meta, at)[0] == READ_PROPERTIES_KEY:
+            return struct.pack('<6Q', size, nt, npf, ncb - 1, nsp, nrc) + meta[48:at] + meta[at + 12:]
+    return meta
+
+
+def rebuild(records, store, machine, version=54):
+    """Yield (record bytes, why, identity) for every record; None bytes when the shaders cannot be regenerated.
+    Versions 50 and 150 write the older record layout (see legacy_meta); 50 also leaves out task/mesh pipelines."""
+    if version not in (LEGACY_VERSION, LEGACY_MESH_VERSION, 52, 53, 54):
+        raise HintError(f'cache version {version} is not supported (50, 150, 52, 53 or 54)')
+    legacy = version in (LEGACY_VERSION, LEGACY_MESH_VERSION)
     for (kind, ident), metas in records.items():
+        if legacy:
+            if version == LEGACY_VERSION and kind == 'g' and any(struct.unpack_from('<I', m, ENV_HDR - 4)[0] in (cc.STAGE_TASK, cc.STAGE_MESH) for m in metas):
+                yield None, NOT_STORED, (kind, ident)
+                continue
+            metas = [legacy_meta(m) for m in metas]
         if kind == 'c':
             code = store.compute.get(struct.unpack_from('<Q', ident, 0)[0])
             if code is None or len(metas) != 1 or struct.unpack_from('<Q', metas[0], 0)[0] != len(code):
@@ -230,6 +257,11 @@ def rebuild(records, store, machine):
                 if (h[1] ^ x) in ts:
                     codes = [store.meshcode(v ^ x) if i in (1, 3) else store.gfx(v) for i, v in enumerate(h) if v]
                     break
+        elif h[1] and not h[3] and store.mesh and metas and struct.unpack_from('<I', metas[0], ENV_HDR - 4)[0] == cc.STAGE_MESH:
+            # Mesh shader without a task shader: it sits in the VertexB slot, keyed with hash ^ MeshStateHash.
+            # The mesh environment ends with what that hash covers (3 mesh registers + 20 header words).
+            x = city_hash64(metas[0][-92:]) | 1
+            codes = [store.meshcode(v ^ x) if i == 1 else store.gfx(v) for i, v in enumerate(h) if v]
         else:
             codes = [store.gfx(v) for v in slots]
         if codes is None or any(c is None for c in codes) or len(codes) != len(metas):
@@ -264,8 +296,7 @@ def machine_from_args(a):
             raise HintError('--driver-id, --driver-version and --features must be given together')
         return (a.driver_id, a.driver_version, a.features & cc.FEATURE_MASK), 'given by hand'
     if a.detect_system or a.vulkaninfo_file:
-        text = open(a.vulkaninfo_file, encoding='utf-8', errors='replace').read() if a.vulkaninfo_file \
-            else cc.run_vulkaninfo(a.vulkaninfo_cmd)
+        text = cc.read_vulkaninfo_file(a.vulkaninfo_file) if a.vulkaninfo_file else cc.run_vulkaninfo(a.vulkaninfo_cmd)
         return cc.machine_from_vulkaninfo(text, a.gpu, a.dyna_state, not a.no_vids)
     raise HintError('give the machine stamp: --detect-system, --vulkaninfo-file or the manual options')
 
@@ -278,11 +309,11 @@ def run_import(hints_path, out_path, gfx_dir, mesh_dir, compute_file, version, m
     if used_list_out and os.path.exists(used_list_out):
         raise HintError(f'refusing to overwrite {used_list_out}')
     head, records, ages = load(hints_path)
-    store = CodeStore(gfx_dir, mesh_dir, compute_file, version)
+    store = CodeStore(gfx_dir, mesh_dir, compute_file, STORE_VERSION)
     ok, why, starter = 0, {}, {}
     with open(out_path, 'xb') as out:
         out.write(cc.MAGIC + struct.pack('<I', version))
-        for data, reason, ident in rebuild(records, store, machine):
+        for data, reason, ident in rebuild(records, store, machine, version):
             if data is None:
                 why[reason] = why.get(reason, 0) + 1
             else:
@@ -318,7 +349,7 @@ def main():
     im.add_argument('--gfx-dir', required=True, help='folder of <hash>.bin lowered graphics shaders from your game files')
     im.add_argument('--mesh-dir', help='same for task and mesh shaders')
     im.add_argument('--compute-file', help='generated compute records (cache format) from your game files')
-    im.add_argument('--version', type=int, default=54)
+    im.add_argument('--version', type=int, default=54, help='cache version to write: 54 (Lichii, default), 50 (Fritchii) or 150 (Fritchii with the task/mesh cache patch)')
     im.add_argument('--used-list-out', help='also write a starter vulkan_used.fork-v54.bin (fast first boot, see README)')
     im.add_argument('--fast-start-age', type=int, default=0,
                     help='with --used-list-out: include pipelines whose recorded age is at most this (0 = the contributor\'s last session)')

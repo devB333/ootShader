@@ -1,0 +1,69 @@
+name: windows-bundle
+
+# Builds scb-oot-win64.zip: the tools, an embedded Python and the two helper programs, so a Windows user needs
+# nothing installed. Run it by hand (Actions > windows-bundle > Run workflow); pushing a tag v* also publishes
+# the zip as a release.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  LICHII_TAG: build-125          # the build the bundled hints were recorded with
+  PYTHON_VERSION: "3.14.0"       # embeddable package; 3.14 has compression.zstd
+
+jobs:
+  bundle:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get Lichii ${{ env.LICHII_TAG }}
+        shell: bash
+        run: git clone --depth 1 --branch "$LICHII_TAG" https://github.com/zortos293/Lichii lichii-src
+
+      - name: Build the helper programs (MinGW-w64 g++, static)
+        shell: bash
+        run: |
+          g++ --version
+          mkdir -p winbuild/bin
+          for tool in hash_dump compute_hash; do
+            g++ -std=c++20 -O2 -static -Iharness/stub -Ilichii-src/src harness/$tool.cpp \
+                lichii-src/src/video_core/shader_warm/warm_records.cpp lichii-src/src/common/cityhash.cpp \
+                -o winbuild/bin/$tool.exe
+          done
+          ls -l winbuild/bin
+
+      - name: Get the embeddable Python
+        shell: bash
+        run: curl -fsSL -o python-embed.zip "https://www.python.org/ftp/python/$PYTHON_VERSION/python-$PYTHON_VERSION-embed-amd64.zip"
+
+      - name: Assemble the bundle
+        shell: bash
+        run: python winbuild/make_bundle.py --python-embed python-embed.zip --lichii lichii-src --bin winbuild/bin
+
+      - name: Check the bundle with its own Python
+        shell: bash
+        run: |
+          cd winbuild/scb-oot-win64
+          ./python/python.exe tools/scb_oot.py --help > /dev/null
+          ./python/python.exe -c "import compression.zstd, lzma, extract_static_shaders, hints, diagnose_missing; print('imports ok')"
+          ./python/python.exe -c "import hints; h, r, a = hints.load('hints/combined.hints'); print(len(r), 'pipelines in the hints')"
+          printf 'x\tvertex\n' > empty.tsv && ./bin/hash_dump.exe empty.tsv && rm empty.tsv
+          ./python/python.exe ../../tests/test_hints.py
+          ./python/python.exe ../../tests/test_convert_cache.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scb-oot-win64
+          path: winbuild/scb-oot-win64.zip
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" winbuild/scb-oot-win64.zip --title "SCB-OOT $GITHUB_REF_NAME" --generate-notes

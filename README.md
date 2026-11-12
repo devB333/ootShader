@@ -26,8 +26,9 @@ GPU-specific part (driver id, driver version and three feature bits) is written 
 
 ## Results so far
 
-* Of the 32,927 pipelines in the hints, 32,429 (98.5%) can be rebuilt from the game files. The rest need
-  shaders the extractor does not reproduce and are built by the emulator when first needed.
+* Of the 32,927 pipelines in the hints, 32,912 (99.95%) can be rebuilt from the game files. The other 15 are
+  compute pipelines whose shaders are in containers the extractor cannot read; the emulator builds them
+  when first needed. `tools/diagnose_missing.py` explains every skipped pipeline.
 * A cache converted from an NVIDIA-only recording ran in Lichii v125 on an AMD card: all records loaded,
   41 of 32,908 (0.12%) were removed by the emulator for missing recorded values, and a 40 minute play
   session built 16 pipelines at runtime (the longest 109 ms).
@@ -38,22 +39,108 @@ GPU-specific part (driver id, driver version and three feature bits) is written 
 
 ## Use it (Windows)
 
-Download the `scb-oot-win64.zip` bundle from the Releases page, unzip it, close the emulator, and run
-`scb-oot.bat` (you can drag your `.nup` file onto it). The bundle contains its own Python and two small
+Download the `scb-oot-win64.zip` bundle from the Releases page (or from the latest `windows-bundle` run under
+Actions), unzip it, close the emulator, and run `scb-oot.bat` for Lichii or Eden, or `scb-oot-fritchii.bat` for
+Fritchii v5.8.x (you can drag your `.nup` file onto either). The bundle contains its own Python and two small
 helper programs, so nothing needs to be installed. Windows may warn about the unsigned `.exe` files.
+
+The bundle is built by `.github/workflows/windows-bundle.yml` (Actions > windows-bundle > Run workflow; pushing a
+tag `v*` also publishes it as a release) from this repository, Lichii `build-125` and the python.org embeddable
+Python.
 
 ## Use it (Linux, or from source)
 
-You need Python 3.14 (or 3.13 with `pip install backports.zstd`), `g++` with C++20, and a clone of
-[Lichii](https://github.com/zortos293/Lichii):
+You need git, Python 3.14 (or 3.13 with `pip install backports.zstd`) and `g++` with C++20. After cloning, run the
+setup once; it fetches [Lichii](https://github.com/zortos293/Lichii) `build-125` into `./lichii`, where the tools
+look by default:
 
 ```
-python3 tools/scb_oot.py --nup "The Legend of Zelda Ocarina of Time [0400486024DEC000][v131072].nup" \
-    --lichii /path/to/Lichii --hints hints/combined.hints
+./setup.sh
+python3 tools/scb_oot.py --nup "/path/to/game.nup"                       # Lichii, Eden
+python3 tools/scb_oot.py --nup "/path/to/game.nup" --emulator fritchii   # Fritchii v5.8.x
 ```
+
+`build-125` is the build the hints were recorded with; newer builds such as `build-160` lower some mesh shaders to
+other code, and 369 more pipelines are skipped. Another checkout can be given with `--lichii`. Under WSL the
+emulator's folder is on the Windows side, so pass it, for example
+`--cache-dir /mnt/c/Users/<you>/AppData/Roaming/fritchii/cache/shader/0400486024dec000`, and if `vulkaninfo`
+does not answer, save `vulkaninfo > vkinfo.txt` in PowerShell and pass `--vulkaninfo-file vkinfo.txt`.
 
 Useful options: `--cache-dir`, `--yes`, `--fast-start 0` (experimental, see below), `--dyna-state`,
 `--no-vids`, `--vulkaninfo-file`. See `python3 tools/scb_oot.py --help`.
+
+## Fritchii v5.8.x releases (cache version 54)
+
+The Fritchii releases (v5.8.4, branch `oot-gather-fix`) use the same cache as Lichii: `vulkan.fork-v54.bin`, with
+task/mesh pipelines, in `%APPDATA%\fritchii\cache\shader\<title id>` (or `user\cache\shader\...` next to the
+exe in portable mode). Fritchii keeps its own file (`vulkan-frizti.fork-v54.bin`) and merges `vulkan.fork-v54.bin`
+from the same folder into it at start. `--emulator fritchii` installs there. Use the Lichii build-125 checkout (the
+release's own `tools/nx2` extractor is older and does not take the zstd dictionary; its lowering gives the same code
+for every shader in the hints):
+
+```
+python3 tools/scb_oot.py --nup game.nup --emulator fritchii --lichii /path/to/Lichii-build-125 \
+    --cache-dir "/mnt/c/Users/<you>/AppData/Roaming/fritchii/cache/shader/0400486024dec000" \
+    --vulkaninfo-file vkinfo.txt
+```
+
+With the helpers built against v5.8.4 (commit 4f5c531) the same 32,912 of 32,927 pipelines are rebuilt as with
+Lichii build-125. Run the emulator once first so the folder exists. Not yet loaded in a v5.8.4 build.
+
+### Building the cache for another PC
+
+The cache is stamped for one graphics driver, so a file made for one PC is ignored on another. You can still build
+it here for the other PC; that PC needs no Python, compiler or WSL. Both PCs must use the same game update.
+
+1. On the other PC, in PowerShell: `vulkaninfo > vkinfo-otherpc.txt`. Copy that file to this PC.
+2. On this PC, build into a folder of its own instead of the emulator's:
+
+   ```
+   mkdir -p out/otherpc
+   python3 tools/scb_oot.py --nup /path/to/game.nup --lichii /path/to/Lichii-build-125 \
+       --cache-dir out/otherpc/0400486024dec000 --vulkaninfo-file /path/to/vkinfo-otherpc.txt
+   ```
+
+3. Copy `out/otherpc/0400486024dec000/vulkan.fork-v54.bin` (about 1.5 GB) to the other PC, into
+   `%APPDATA%\fritchii\cache\shader\0400486024dec000\` for Fritchii v5.8.x, or
+   `%APPDATA%\eden\cache\shader\0400486024dec000\` for Lichii. Close the emulator first, and start it once
+   beforehand so the folder exists.
+4. Make it again after a graphics driver update on that PC (the driver version is part of the stamp).
+
+On NVIDIA, also set Shader Cache Size to Unlimited (NVIDIA Control Panel, Manage 3D settings): Fritchii's own
+"Prepare Shaders" step depends on it, see its `tools/nx2-precompile/README.md`.
+
+The sections below are about the older `nx2` branch of the Fritchii repository (cache version 50), which the
+releases are not built from.
+
+## Fritchii `nx2` branch (experimental)
+
+The `nx2` branch of [Fritchii](https://github.com/Frizti/Fritchii) reads cache version 50 (`vulkan.fork-v50.bin`) and
+lowers some shaders differently from Lichii. Build the cache with its own lowering code:
+
+```
+python3 tools/scb_oot.py --nup game.nup --emulator fritchii-nx2 \
+    --lichii /path/to/Lichii-build-125 --lowering-src /path/to/Fritchii/src
+```
+
+Of the 32,927 pipelines in the hints, 29,086 are written: 25,941 of the 25,947 vertex+fragment pipelines and 3,145 of
+the 3,167 compute pipelines. The 3,813 task/mesh pipelines are left out, because Fritchii's cache format has no place
+for them and Fritchii builds them in every session. Pipeline keys and the driver stamp rules are the same as Lichii's.
+
+A Fritchii build with the task/mesh cache patch (branch `cache-task-mesh-pipelines` of a fork, cache version 150,
+`vulkan.fork-v150.bin`) stores them too: use `--emulator fritchii-nx2-mesh`. That writes 32,263 pipelines (29,118
+graphics, 3,145 compute); 636 task/mesh pipelines are skipped because Fritchii lowers their mesh shader differently.
+
+### Example command (patched Fritchii, cache version 150)
+
+Close the emulator first, then in WSL:
+
+```
+cd /path/to/ootShader
+python3 tools/scb_oot.py --emulator fritchii-nx2-mesh --nup "/path/to/game.nup" --lichii ~/.cache/scb-oot/Lichii-125 --lowering-src fritchi/src --cache-dir /mnt/c/Users/<you>/AppData/Roaming/eden/cache/shader/0400486024dec000 --vulkaninfo-file /path/to/vkinfo.txt
+```
+
+`vkinfo.txt` comes from `vulkaninfo > vkinfo.txt` in PowerShell; make it again after a graphics driver update.
 
 ## Experimental: fast start
 
@@ -66,6 +153,7 @@ session, but a real start with it has **not been tested** yet.
 * `tools/convert_cache.py` re-stamps a cache written on another GPU so your emulator accepts it.
 * `tools/hints.py` exports, merges and imports hints. Anyone with a played cache can contribute hints.
 * `tools/build_code_store.py` regenerates the shader code from a `.nup`.
+* `tools/diagnose_missing.py` reports which pipelines cannot be rebuilt, which shader is missing and why.
 
 See `tools/README.md` and `docs/NOTES.md` for the technical details.
 
