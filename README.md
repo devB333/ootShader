@@ -75,6 +75,17 @@ A Fritchii build with the task/mesh cache patch (branch `cache-task-mesh-pipelin
 `vulkan.fork-v150.bin`) stores them too: use `--emulator fritchii-mesh`. That writes 32,263 pipelines (29,118
 graphics, 3,145 compute); 636 task/mesh pipelines are skipped because Fritchii lowers their mesh shader differently.
 
+### Example command (patched Fritchii, cache version 150)
+
+Close the emulator first, then in WSL:
+
+```
+cd /path/to/ootShader
+python3 tools/scb_oot.py --emulator fritchii-mesh --nup "/path/to/game.nup" --lichii ~/.cache/scb-oot/Lichii-125 --lowering-src fritchi/src --cache-dir /mnt/c/Users/<you>/AppData/Roaming/eden/cache/shader/0400486024dec000 --vulkaninfo-file /path/to/vkinfo.txt
+```
+
+`vkinfo.txt` comes from `vulkaninfo > vkinfo.txt` in PowerShell; make it again after a graphics driver update.
+
 ## Experimental: fast start
 
 `--fast-start 0` also writes a starter "used pipelines" list so the emulator builds only about 2,200
