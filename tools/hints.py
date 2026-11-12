@@ -269,8 +269,7 @@ def machine_from_args(a):
             raise HintError('--driver-id, --driver-version and --features must be given together')
         return (a.driver_id, a.driver_version, a.features & cc.FEATURE_MASK), 'given by hand'
     if a.detect_system or a.vulkaninfo_file:
-        text = open(a.vulkaninfo_file, encoding='utf-8', errors='replace').read() if a.vulkaninfo_file \
-            else cc.run_vulkaninfo(a.vulkaninfo_cmd)
+        text = cc.read_vulkaninfo_file(a.vulkaninfo_file) if a.vulkaninfo_file else cc.run_vulkaninfo(a.vulkaninfo_cmd)
         return cc.machine_from_vulkaninfo(text, a.gpu, a.dyna_state, not a.no_vids)
     raise HintError('give the machine stamp: --detect-system, --vulkaninfo-file or the manual options')
 

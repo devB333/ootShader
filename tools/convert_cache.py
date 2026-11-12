@@ -101,6 +101,14 @@ DRIVER_IDS = {name: i for i, name in enumerate([
 BIT_EDS, BIT_EDS2, BIT_EDS2_LOGIC_OP, BIT_EDS3_BLEND, BIT_EDS3_ENABLES, BIT_VIDS, BIT_CWE = 0, 1, 2, 3, 4, 5, 20
 
 
+def read_vulkaninfo_file(path):
+    """Saved vulkaninfo output. Windows PowerShell's `>` writes UTF-16 with a byte order mark."""
+    data = open(path, 'rb').read()
+    if data[:2] in (b'\xff\xfe', b'\xfe\xff'):
+        return data.decode('utf-16', errors='replace')
+    return data.decode('utf-8-sig', errors='replace')
+
+
 def run_vulkaninfo(cmd=None, timeout=300):
     """Full `vulkaninfo` text. Tries vulkaninfo, then the Windows one reachable from WSL."""
     import shutil, subprocess
@@ -200,8 +208,7 @@ def main():
             sys.exit('--driver-id, --driver-version and --features must be given together')
         system = (a.driver_id, a.driver_version, a.features & FEATURE_MASK), 'given by hand'
     elif a.detect_system or a.vulkaninfo_file:
-        text = open(a.vulkaninfo_file, encoding='utf-8', errors='replace').read() if a.vulkaninfo_file \
-            else run_vulkaninfo(a.vulkaninfo_cmd)
+        text = read_vulkaninfo_file(a.vulkaninfo_file) if a.vulkaninfo_file else run_vulkaninfo(a.vulkaninfo_cmd)
         system = machine_from_vulkaninfo(text, a.gpu, a.dyna_state, not a.no_vids)
     if system:
         print(f'system stamp: driver_id={system[0][0]} driver_version={system[0][1]:#x} features={system[0][2]:#x} ({system[1]})')
