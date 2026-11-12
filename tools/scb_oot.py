@@ -27,7 +27,8 @@ CACHE_NAME = 'vulkan.fork-v54.bin'
 USED_NAME = 'vulkan_used.fork-v54.bin'
 # Fritchii reads cache version 50: other file name, older record layout, no task/mesh pipelines, and its own
 # (older) shader lowering, so the code store must be built with --lowering-src <Fritchii>/src.
-TARGETS = {'lichii': 54, 'fritchii': 50}
+# fritchii-mesh: a Fritchii build with the task/mesh cache patch (cache version 150), which also stores those pipelines.
+TARGETS = {'lichii': 54, 'fritchii': 50, 'fritchii-mesh': 150}
 EMULATORS = ('lichii.exe', 'fritchii.exe', 'fritchii', 'eden.exe', 'eden-cli.exe', 'yuzu.exe', 'yuzu-cmd.exe', 'lichii', 'eden', 'yuzu')
 
 
@@ -129,16 +130,17 @@ def main():
     ap.add_argument('--bin-dir', default=os.path.join(ROOT, 'bin'), help='ready-made lowering programs (bundled by default)')
     ap.add_argument('--extractor-python', default=sys.executable)
     ap.add_argument('--emulator', choices=sorted(TARGETS), default='lichii',
-                    help='emulator to build the cache for (default lichii; fritchii writes cache version 50)')
-    ap.add_argument('--lowering-src', help='with --emulator fritchii: the src folder of your Fritchii checkout '
+                    help='emulator to build the cache for (default lichii). fritchii: stock Fritchii, cache version 50, no task/mesh '
+                    'pipelines. fritchii-mesh: Fritchii built with the task/mesh cache patch, cache version 150')
+    ap.add_argument('--lowering-src', help='with --emulator fritchii or fritchii-mesh: the src folder of your Fritchii checkout '
                     '(its shader lowering decides the shader hashes); --lichii must then be Lichii build-125')
     H.machine_args(ap)
     a = ap.parse_args()
     version = TARGETS[a.emulator]
     cache_name, used_name = (n.replace('v54', f'v{version}') for n in (CACHE_NAME, USED_NAME))
-    if a.emulator == 'fritchii':
+    if a.emulator != 'lichii':
         if not a.lowering_src:
-            fail('--emulator fritchii needs --lowering-src <Fritchii checkout>/src (and --lichii <Lichii build-125>).')
+            fail(f'--emulator {a.emulator} needs --lowering-src <Fritchii checkout>/src (and --lichii <Lichii build-125>).')
         if a.fast_start is not None:
             fail('--fast-start is not supported for Fritchii.')
         a.lowering_src = os.path.abspath(a.lowering_src)

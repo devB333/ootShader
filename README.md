@@ -71,6 +71,10 @@ Of the 32,927 pipelines in the hints, 29,086 are written: 25,941 of the 25,947 v
 the 3,167 compute pipelines. The 3,813 task/mesh pipelines are left out, because Fritchii's cache format has no place
 for them and Fritchii builds them in every session. Pipeline keys and the driver stamp rules are the same as Lichii's.
 
+A Fritchii build with the task/mesh cache patch (branch `cache-task-mesh-pipelines` of a fork, cache version 150,
+`vulkan.fork-v150.bin`) stores them too: use `--emulator fritchii-mesh`. That writes 32,263 pipelines (29,118
+graphics, 3,145 compute); 636 task/mesh pipelines are skipped because Fritchii lowers their mesh shader differently.
+
 ## Experimental: fast start
 
 `--fast-start 0` also writes a starter "used pipelines" list so the emulator builds only about 2,200
