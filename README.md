@@ -61,15 +61,17 @@ Useful options: `--cache-dir`, `--yes`, `--fast-start 0` (experimental, see belo
 
 The Fritchii releases (v5.8.4, branch `oot-gather-fix`) use the same cache as Lichii: `vulkan.fork-v54.bin`, with
 task/mesh pipelines, in `%APPDATA%\fritchii\cache\shader\<title id>` (or `user\cache\shader\...` next to the
-exe in portable mode). Point `--lichii` at a checkout of that release; no `--emulator` option is needed:
+exe in portable mode). Fritchii keeps its own file (`vulkan-frizti.fork-v54.bin`) and merges `vulkan.fork-v54.bin`
+from the same folder into it at start. Use the Lichii build-125 checkout (the release's own `tools/nx2` extractor is
+older and does not take the zstd dictionary; its lowering gives the same code for every shader in the hints):
 
 ```
-python3 tools/scb_oot.py --nup game.nup --lichii /path/to/Fritchii-v5.8.4 \
+python3 tools/scb_oot.py --nup game.nup --lichii /path/to/Lichii-build-125 \
     --cache-dir "/mnt/c/Users/<you>/AppData/Roaming/fritchii/cache/shader/0400486024dec000" \
     --vulkaninfo-file vkinfo.txt
 ```
 
-Built against v5.8.4 (commit 4f5c531), 32,912 of the 32,927 pipelines in the hints are rebuilt, the same as with
+With the helpers built against v5.8.4 (commit 4f5c531) the same 32,912 of 32,927 pipelines are rebuilt as with
 Lichii build-125. Run the emulator once first so the folder exists. Not yet loaded in a v5.8.4 build.
 
 The sections below are about the older `nx2` branch of the Fritchii repository (cache version 50), which the
