@@ -82,16 +82,22 @@ def extract(py, lichii, romfs, out, title):
     print(f"{len(json.load(open(manifest))['errors'])} containers could not be read (listed in the manifest)")
 
 
-def build(lichii, binary_dir, prebuilt=None):
+def build(lichii, binary_dir, prebuilt=None, lowering_src=None):
+    """lowering_src: the src folder of another emulator of the family (for example Fritchii) whose lowering code
+    is used instead of Lichii's. Its headers come first; Lichii still supplies warm_records.cpp."""
     os.makedirs(binary_dir, exist_ok=True)
     if prebuilt:                                           # ready-made programs (the Windows bundle): just copy them
         for tool in ('hash_dump', 'compute_hash'):
             shutil.copy(os.path.join(prebuilt, tool + EXE), os.path.join(binary_dir, tool + EXE))
         return
     src = os.path.join(lichii, 'src')
-    common = ['g++', '-std=c++20', '-O2', '-I' + os.path.join(ROOT, 'harness', 'stub'), '-I' + src]
-    libs = [os.path.join(src, 'video_core', 'shader_warm', 'warm_records.cpp'), os.path.join(src, 'common', 'cityhash.cpp')]
+    common = ['g++', '-std=c++20', '-O2', '-I' + os.path.join(ROOT, 'harness', 'stub')] + \
+             (['-I' + lowering_src] if lowering_src else []) + ['-I' + src]
+    libs = [os.path.join(src, 'video_core', 'shader_warm', 'warm_records.cpp'),
+            os.path.join(lowering_src or src, 'common', 'cityhash.cpp')]
     lowering = os.path.join(src, 'video_core', 'native_lowering.cpp')   # newer Lichii: LowerNativeProgram moved out of warm_records.cpp
+    if os.path.exists(lowering) and lowering_src:
+        sys.exit('--lowering-src needs a Lichii checkout whose warm_records.cpp does the lowering itself (build-125)')
     if os.path.exists(lowering):
         libs.append(lowering)
     for tool in ('hash_dump', 'compute_hash'):
@@ -130,9 +136,13 @@ def lower(work):
     print(f'compute: {sum(1 for l in out if l.startswith("OK"))} of {len(lists["compute"])} programs lowered')
 
 
-def build_store(nup, work, lichii, bin_dir, extractor_python, title):
+def build_store(nup, work, lichii, bin_dir, extractor_python, title, lowering_src=None):
     """Run the four steps; returns the code store folder (<work>/store)."""
     prebuilt = bin_dir if all(os.path.exists(os.path.join(bin_dir, t + EXE)) for t in ('hash_dump', 'compute_hash')) else None
+    if lowering_src:
+        prebuilt = None                                    # ready-made programs hold Lichii's lowering
+        if not os.path.exists(os.path.join(lowering_src, 'shader_recompiler', 'frontend', 'ampere', 'lower_to_maxwell.h')):
+            sys.exit(f'{lowering_src} is not the src folder of an emulator with the native lowering code')
     if not prebuilt and not shutil.which('g++'):
         sys.exit('g++ (C++20) is required when no ready-made programs are in ' + bin_dir)
     if not os.path.exists(os.path.join(lichii, 'tools', 'nx2', 'extract_static_shaders.py')):
@@ -141,7 +151,7 @@ def build_store(nup, work, lichii, bin_dir, extractor_python, title):
     romfs, extracted = os.path.join(work, 'romfs'), os.path.join(work, 'extracted')
     step('1/4 reading shader files from the .nup'); read_nup(nup, romfs)
     step('2/4 extracting native programs'); extract(extractor_python, lichii, romfs, extracted, title)
-    step('3/4 building the lowering programs'); build(lichii, os.path.join(work, 'bin'), prebuilt)
+    step('3/4 building the lowering programs'); build(lichii, os.path.join(work, 'bin'), prebuilt, lowering_src)
     step('4/4 lowering'); lower(work)
     return os.path.join(work, 'store')
 
@@ -159,6 +169,8 @@ def main():
                     help='folder with ready-made hash_dump and compute_hash programs; used when present, else g++ builds them')
     ap.add_argument('--extractor-python', default=sys.executable,
                     help='python that runs extract_static_shaders.py (3.14 or with backports.zstd)')
+    ap.add_argument('--lowering-src', help='src folder of another emulator (Fritchii) whose shader lowering to use; '
+                    '--lichii must then be build-125')
     ap.add_argument('--work', required=True, help='new working folder (must not exist)')
     a = ap.parse_args()
     a.nup, a.lichii, a.work, a.bin_dir = (os.path.abspath(x) for x in (a.nup, a.lichii, a.work, a.bin_dir))
@@ -169,7 +181,8 @@ def main():
         from nup_read import Nup
         a.title = f'{Nup(a.nup).packages[0]["title"]:016x}'
         print('title id from the .nup:', a.title)
-    store = build_store(a.nup, a.work, a.lichii, a.bin_dir, a.extractor_python, a.title)
+    store = build_store(a.nup, a.work, a.lichii, a.bin_dir, a.extractor_python, a.title,
+                        os.path.abspath(a.lowering_src) if a.lowering_src else None)
     print(f'\ncode store ready: {store}\n'
           f'  hints.py import <hints> --out <cache> --gfx-dir {os.path.join(store, "gfx")} '
           f'--mesh-dir {os.path.join(store, "mesh")} --compute-file {os.path.join(store, "compute.bin")} --detect-system')

@@ -57,6 +57,20 @@ python3 tools/scb_oot.py --nup "The Legend of Zelda Ocarina of Time [0400486024D
 Useful options: `--cache-dir`, `--yes`, `--fast-start 0` (experimental, see below), `--dyna-state`,
 `--no-vids`, `--vulkaninfo-file`. See `python3 tools/scb_oot.py --help`.
 
+## Fritchii (experimental, not yet run in the emulator)
+
+[Fritchii](https://github.com/Frizti/Fritchii) reads cache version 50 (`vulkan.fork-v50.bin`) and lowers some shaders
+differently from Lichii. Build the cache with its own lowering code:
+
+```
+python3 tools/scb_oot.py --nup game.nup --emulator fritchii \
+    --lichii /path/to/Lichii-build-125 --lowering-src /path/to/Fritchii/src
+```
+
+Of the 32,927 pipelines in the hints, 29,086 are written: 25,941 of the 25,947 vertex+fragment pipelines and 3,145 of
+the 3,167 compute pipelines. The 3,813 task/mesh pipelines are left out, because Fritchii's cache format has no place
+for them and Fritchii builds them in every session. Pipeline keys and the driver stamp rules are the same as Lichii's.
+
 ## Experimental: fast start
 
 `--fast-start 0` also writes a starter "used pipelines" list so the emulator builds only about 2,200

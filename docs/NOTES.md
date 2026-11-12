@@ -89,7 +89,22 @@ per record. 32,927 pipelines take 1.4 MB.
   489 of 489 and 180 of 180 records identical, so `hints.py` is game independent. The step that
   regenerates shader code is engine specific.
 
+## Fritchii (cache version 50)
+
+Checked against the Fritchii sources (commit f66ea63), not in the running emulator. Same magic, record framing,
+graphics and compute keys, `FixedPipelineState` and dynamic-state feature rules as Lichii build-125. Differences:
+
+* File `vulkan.fork-v50.bin`; a file with another version in its header is deleted at start.
+* Environments have no read-properties entry (version 52 and later append one constant buffer entry with key
+  `0xFFFFFFFF00000000`; 81 environments in the hints have it) and no mesh registers after the program header.
+* Task/mesh pipelines are neither written nor loaded.
+* The lowering is older: built against it (`build_code_store.py --lowering-src`), 72 graphics and 89 task/mesh
+  store hashes differ from build-125 and 132 more programs fail to lower. For the pipelines the format can
+  store this loses 6 graphics and 7 more compute pipelines.
+
 ## Open items
+
+* A real run of the version 50 cache in Fritchii.
 
 * Real play test of `--fast-start`.
 * The 15 compute pipelines whose shaders are not reproduced (probably the NDSR packages).

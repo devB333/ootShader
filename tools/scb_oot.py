@@ -25,7 +25,10 @@ UPDATE = 131072
 GAME = 'The Legend of Zelda: Ocarina of Time Remake'
 CACHE_NAME = 'vulkan.fork-v54.bin'
 USED_NAME = 'vulkan_used.fork-v54.bin'
-EMULATORS = ('lichii.exe', 'eden.exe', 'eden-cli.exe', 'yuzu.exe', 'yuzu-cmd.exe', 'lichii', 'eden', 'yuzu')
+# Fritchii reads cache version 50: other file name, older record layout, no task/mesh pipelines, and its own
+# (older) shader lowering, so the code store must be built with --lowering-src <Fritchii>/src.
+TARGETS = {'lichii': 54, 'fritchii': 50}
+EMULATORS = ('lichii.exe', 'fritchii.exe', 'fritchii', 'eden.exe', 'eden-cli.exe', 'yuzu.exe', 'yuzu-cmd.exe', 'lichii', 'eden', 'yuzu')
 
 
 def say(msg=''):
@@ -81,13 +84,13 @@ def sha256(path):
     return h.hexdigest()
 
 
-def count_records(path):
+def count_records(path, version=54):
     import mmap
     with open(path, 'rb') as f:
         m = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
         g = c = 0
         end = 12
-        for off, eend, en, comp in cc.read_records(m, 54):
+        for off, eend, en, comp in cc.read_records(m, version):
             c += comp; g += not comp; end = en
         if end != len(m):
             raise cc.CacheError('the file has trailing bytes')
@@ -125,8 +128,20 @@ def main():
     ap.add_argument('--lichii', default=os.path.join(ROOT, 'lichii'), help='Lichii folder with tools/nx2 (bundled by default)')
     ap.add_argument('--bin-dir', default=os.path.join(ROOT, 'bin'), help='ready-made lowering programs (bundled by default)')
     ap.add_argument('--extractor-python', default=sys.executable)
+    ap.add_argument('--emulator', choices=sorted(TARGETS), default='lichii',
+                    help='emulator to build the cache for (default lichii; fritchii writes cache version 50)')
+    ap.add_argument('--lowering-src', help='with --emulator fritchii: the src folder of your Fritchii checkout '
+                    '(its shader lowering decides the shader hashes); --lichii must then be Lichii build-125')
     H.machine_args(ap)
     a = ap.parse_args()
+    version = TARGETS[a.emulator]
+    cache_name, used_name = (n.replace('v54', f'v{version}') for n in (CACHE_NAME, USED_NAME))
+    if a.emulator == 'fritchii':
+        if not a.lowering_src:
+            fail('--emulator fritchii needs --lowering-src <Fritchii checkout>/src (and --lichii <Lichii build-125>).')
+        if a.fast_start is not None:
+            fail('--fast-start is not supported for Fritchii.')
+        a.lowering_src = os.path.abspath(a.lowering_src)
 
     say(f'SCB-OOT: Shader Cache Builder for {GAME}\n')
     a.nup, a.hints, a.lichii, a.bin_dir = (os.path.abspath(x) for x in (a.nup, a.hints, a.lichii, a.bin_dir))
@@ -162,22 +177,23 @@ def main():
         fail(f'not enough free disk space (need about {need:.0f} GB for the temporary files and {3.5:.1f} GB in the cache folder).')
     try:
         say('\nStep 1 of 3: regenerating the shader code from your game file (about a minute)')
-        store = B.build_store(a.nup, os.path.join(tmp, 'work'), a.lichii, a.bin_dir, a.extractor_python, TITLE)
+        store = B.build_store(a.nup, os.path.join(tmp, 'work'), a.lichii, a.bin_dir, a.extractor_python, TITLE, a.lowering_src)
         say('\nStep 2 of 3: building the cache for your graphics driver')
-        new_cache = os.path.join(tmp, CACHE_NAME)
-        new_used = os.path.join(tmp, USED_NAME) if a.fast_start is not None else None
+        new_cache = os.path.join(tmp, cache_name)
+        new_used = os.path.join(tmp, used_name) if a.fast_start is not None else None
         ok, total, why, starter = H.run_import(a.hints, new_cache, os.path.join(store, 'gfx'), os.path.join(store, 'mesh'),
-                                               os.path.join(store, 'compute.bin'), 54, machine, new_used, a.fast_start or 0)
+                                               os.path.join(store, 'compute.bin'), version, machine, new_used, a.fast_start or 0)
+        total -= why.get(H.NOT_STORED, 0)                                             # not a failure: the format has no place for them
         if ok < 0.9 * total:
             fail(f'only {ok} of {total} pipelines could be rebuilt; something is wrong with the game files or the hints. Nothing was changed.')
-        g, c = count_records(new_cache)
+        g, c = count_records(new_cache, version)
         say(f'new cache checked: {g} graphics + {c} compute pipelines, {os.path.getsize(new_cache) / 1e9:.2f} GB')
         if not a.keep_work:
             shutil.rmtree(os.path.join(tmp, 'work'), ignore_errors=True)                  # game code: delete as soon as possible
 
         say('\nStep 3 of 3: installing')
         os.makedirs(cache_dir, exist_ok=True)
-        target, target_used = os.path.join(cache_dir, CACHE_NAME), os.path.join(cache_dir, USED_NAME)
+        target, target_used = os.path.join(cache_dir, cache_name), os.path.join(cache_dir, used_name)
         existing = [p for p in (target, target_used) if os.path.exists(p)]
         if existing:
             size = os.path.getsize(target) / 1e9 if os.path.exists(target) else 0
@@ -199,7 +215,7 @@ def main():
                 part = dst + '.scb-new'
                 shutil.copy2(src, part)
                 os.replace(part, dst)
-        g2, c2 = count_records(target)
+        g2, c2 = count_records(target, version)
         say(f'installed: {target}\n  {g2} graphics + {c2} compute pipelines')
     finally:
         if a.keep_work:
@@ -213,6 +229,9 @@ def main():
             'It only does that if the emulator has EDEN_NX2_PRELOAD_ALL_PIPELINES=1 (nx2_switches.txt); otherwise it builds some now and the rest later.')
     else:
         say(f'Fast start (experimental): the first start builds about {starter} pipelines and prepares the rest in the background.')
+    stored = why.pop(H.NOT_STORED, 0)
+    if stored:
+        say(f'{stored} task/mesh pipelines are left out: cache version {version} cannot store them, the emulator builds them in every session.')
     say(f'Skipped {sum(why.values())} pipelines that the game files do not reproduce; they are built when the game first needs them.')
 
 
