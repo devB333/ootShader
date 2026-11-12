@@ -37,6 +37,9 @@ an NVIDIA and an AMD recording were harmless (32,410 of 32,410 records identical
   `MeshStateHash` (a hash of three mesh registers and a 20 word header). The cache holds 54 distinct
   values for this game. The importer finds the value by trying every mesh hash until both slots
   resolve.
+* A mesh shader without a task shader sits in slot 1 (VertexB) with a stage 8 environment, also XORed
+  with `MeshStateHash`. The value is `CityHash64(last 92 bytes of the mesh environment) | 1` (three mesh
+  registers and the 20 word primitive header). 483 pipelines (29 shaders, 19 mesh states) have this shape.
 * Pairing of vertex and fragment shaders from the game files: in `.bfsha` archives a vertex and a
   fragment program with the same variation number belong together. In `.sharcb` (BAHS) archives records
   alternate vertex, fragment, so variation v pairs with v+1. This covers every pair in the cache whose
@@ -48,7 +51,14 @@ an NVIDIA and an AMD recording were harmless (32,410 of 32,410 records identical
 `romfs/Lib/agl`, `Lib/Terrain`, `Lib/gsys` (`*_resource.*.sarc.zs`). The library archives hold about
 5,500 programs and nearly all of the shaders that first looked missing. Programs come out through
 Lichii's `tools/nx2/extract_static_shaders.py`. Unreadable: eight containers (for example NDSR packages).
-Not reproduced: 483 graphics and 15 compute pipelines in the hints.
+Not reproduced: 15 compute pipelines in the hints (none appears in a recorded used list). For 12 of them no
+extracted compute program has their workgroup size and shared memory, so the programs are not in any
+readable container. A scan of the other files in the `.nup` (large asset folders excluded) finds no shader
+container outside the files that are read. `tools/diagnose_missing.py` produces this report.
+
+The lowering must match the emulator build that recorded the hints. With Lichii `build-125` all recorded
+graphics shaders are reproduced; `build-160` lowers 32 mesh shaders to other code (other size and hash), which
+skips 369 task+mesh pipelines.
 
 ## Used pipelines list (`vulkan_used.fork-v54.bin`)
 
@@ -82,7 +92,8 @@ per record. 32,927 pipelines take 1.4 MB.
 ## Open items
 
 * Real play test of `--fast-start`.
-* The 500 or so pipelines whose shaders are not reproduced (NDSR packages, lowering failures).
+* The 15 compute pipelines whose shaders are not reproduced (probably the NDSR packages).
+* Hints recorded with a newer Lichii build (mesh lowering changed after build-125).
 * Re-test when Lichii ships its new shader cache format.
 * Draw states for pipelines nobody has recorded (the blend setting, color formats) cannot be derived from the
   game files so far.

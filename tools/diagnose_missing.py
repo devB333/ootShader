@@ -4,19 +4,21 @@
 `hints.py import` (and scb_oot.py) only say "skipped N pipelines". This tool explains every one of them and
 writes a log. It never changes the hints, the game file or an emulator cache.
 
-  python3 tools/diagnose_missing.py                                  # hints only: what can be told without game files
-  python3 tools/diagnose_missing.py --nup GAME.nup                   # + scan the .nup for shader containers the extractor skips
-  python3 tools/diagnose_missing.py --nup GAME.nup --work WORK       # full: WORK is a build_code_store.py folder; it is built
-                                                                     #   when it does not exist (needs --lichii and g++ or --bin-dir)
+  python3 tools/diagnose_missing.py --nup GAME.nup --work WORK --lichii LICHII
+        full diagnosis. WORK is a build_code_store.py folder; it is built when it does not exist
+        (needs --lichii and g++, or --bin-dir). Use the Lichii build the hints were recorded with
+        (build-125 for the bundled hints): a newer one lowers some programs to other code.
+  python3 tools/diagnose_missing.py --nup GAME.nup
+        without a code store: only scans the .nup for shader containers the extractor skips
 
 What it checks, per skipped pipeline and per shader slot:
   * the stage the emulator recorded (vertex, fragment, task, mesh, compute) and the code size it expects;
   * for task/mesh stages, the MeshStateHash the emulator XORs into the key (computed from the recorded
     mesh registers and primitive header), which gives the real hash of the shader code;
   * whether that code is in the code store (gfx, mesh or compute), under which hash and with which size;
-  * if it is not: which extracted program it most likely is (the partner of the shaders that were found in the
-    same archive, or a program with the same native header), and whether that program failed to lower (with
-    Lichii's error text), lowered to different code, or was never handed to the lowering step;
+  * if it is not: which extracted program it most likely is (a program of that stage with the same native header
+    that lowers to the recorded size but to other code, the partner of the shaders that were found in the same
+    archive, or a program with the same header that failed to lower, with Lichii's error text);
   * which containers the extractor could not read, and which files in the .nup hold shader containers but
     are not on the list build_code_store.py reads.
 
@@ -41,14 +43,12 @@ STAGES = {0: 'vertex', 1: 'tess-control', 2: 'tess-eval', 3: 'geometry', 4: 'fra
 TASK, MESH, COMPUTE = 7, 8, 5
 
 # causes, in the order they are reported
-MESH_ONLY = 'mesh shader without a task shader (importer never looks in the mesh store)'
 MESH_STATE = 'task+mesh pipeline whose mesh state the importer could not resolve'
 SIZE = 'shader found, but its code size differs from the recorded one'
 COUNT = 'number of recorded environments does not match the number of shader hashes'
 NOT_REPRODUCED = 'shader code is not in the code store'
 COMPUTE_MISSING = 'compute shader code is not in the code store'
 COMPUTE_SIZE = 'compute shader found, but its code size differs from the recorded one'
-UNKNOWN = 'cannot tell without the code store (run again with --work)'
 
 
 # ---- the recorded environment (hints "meta" blob) ----------------------------------------------
@@ -99,9 +99,21 @@ class Work:
         for p in self.manifest['programs']:
             for o in p['origins']:
                 self.by_member[(o['source'], o['member'])].append((o.get('variation'), p['stage'], p))
-        self.result = {}                                   # program code path -> ('OK', hash) | ('ERR', text)
+        self.result = {}                                   # program code path -> ('OK', hash, size) | ('ERR', text)
         self.lowering_known = self._lowering()
         self._headers = {}
+        self._shapes = None
+        self.used = set()                                  # real shader hashes the hints refer to (set by main)
+
+    def lowered_like(self, env):
+        """Programs of the stage of `env` with its native header that lower to exactly its code size."""
+        if self._shapes is None:
+            self._shapes = collections.defaultdict(list)
+            for p in self.manifest['programs']:
+                r = self.result.get(p['code'])
+                if r and r[0] == 'OK' and r[2] is not None:
+                    self._shapes[(p['stage'], self.native_header(p), r[2])].append(p)
+        return self._shapes.get((env.stage_name, env.header, env.size), [])
 
     def size(self, kind, h):
         """Code size of a stored shader, or None."""
@@ -178,7 +190,7 @@ class Work:
                 f = line.split('\t')
                 if f[0] == 'OK':
                     h = int(f[2], 16)
-                    self.result[rel] = ('OK', h)
+                    self.result[rel] = ('OK', h, int(f[3]) if name != 'compute' else None)
                     self.by_hash[h].append(p)
                 else:
                     self.result[rel] = ('ERR', f[-1])
@@ -193,7 +205,8 @@ class Work:
                 return f'never lowered: the extractor marks it format={program.get("format")!r}, build_code_store.py only lowers "native-header"'
             return 'no lowering result'
         if r[0] == 'OK':
-            return f'lowered to {r[1]:016x}'
+            return (f'lowers to other code: hash {r[1]:016x}' + (f', {r[2]} bytes' if r[2] is not None else '') +
+                    ' (if this is the shader: this Lichii lowers it differently from the build that recorded the hints)')
         return f'LOWERING FAILED: {r[1]}'
 
 
@@ -210,36 +223,47 @@ def origin_text(program, limit=2):
 
 # ---- diagnosis -------------------------------------------------------------------------------------
 def candidates(w, env, siblings):
-    """Extracted programs that are probably the missing shader of `env`:
-    1. partners: programs of the same stage next to a sibling shader that was found (same archive member, same
-       variation in .bfsha, the neighbouring record in .sharcb);
-    2. programs of that stage with the same 80 byte native header that failed to lower or were never lowered."""
-    out, seen = [], set()
+    """Extracted programs that are probably the missing shader of `env`, best guess first:
+    1. programs of that stage with the same 80 byte native header that lower to exactly the recorded size;
+    2. partners of the sibling shaders that were found: programs of that stage in the same archive member with
+       the same variation (.bfsha) or in the neighbouring record (.sharcb), common to all siblings if possible;
+    3. programs of that stage with the same header that failed to lower or were never lowered.
+    A program that lowers to a hash some pipeline of the hints uses is another shader and is left out."""
+    def other_shader(p):
+        r = w.result.get(p['code'])
+        return bool(r) and r[0] == 'OK' and r[1] in w.used
 
-    def add(p, how):
-        if p['code'] not in seen:
-            seen.add(p['code'])
-            out.append((how, p))
-
+    out = [('same stage, native header and lowered size', p) for p in (w.lowered_like(env) if env.header else [])
+           if not other_shader(p)]
+    if out:
+        return out
+    groups = []
     for sib in siblings:
+        group = {}
         for o in sib['origins']:
             var = o.get('variation')
             if var is None:
                 continue
+            near = 0 if 'BNSH@' in o['member'] else 1
             for v, stage, p in w.by_member[(o['source'], o['member'])]:
-                if stage == env.stage_name and v is not None and abs(v - var) <= 1 and p is not sib:
-                    add(p, f'partner of the shader that was found (variation {var})')
+                if stage == env.stage_name and v is not None and abs(v - var) <= near and not other_shader(p):
+                    group.setdefault(p['code'], (f'partner of a shader that was found, variation {var}', p))
+        if group:
+            groups.append(group)
+    if groups:
+        common = set(groups[0]).intersection(*groups[1:])
+        seen = set()
+        for group in groups:
+            for code, c in group.items():
+                if (code in common or not common) and code not in seen:
+                    seen.add(code)
+                    out.append(c)
+        return out
     if env.header:
-        for p, _ in w.failed:
+        for p in [p for p, _ in w.failed] + w.never_lowered:
             if p['stage'] == env.stage_name and w.native_header(p) == env.header:
-                add(p, 'same native header')
-        for p in w.never_lowered:
-            if p['stage'] == env.stage_name and w.native_header(p) == env.header:
-                add(p, 'same native header')
-    # programs that failed or were never lowered explain a missing shader; the ones that lowered fine (to another
-    # hash) are only shown when there is nothing else
-    bad = [c for c in out if w.result.get(c[1]['code'], ('',))[0] != 'OK']
-    return bad or out[:3]
+                out.append(('same native header', p))
+    return out
 
 
 def diagnose_graphics(ident, metas, w, importer_reason):
@@ -261,12 +285,10 @@ def diagnose_graphics(ident, metas, w, importer_reason):
                 n = w.size(kind, s['real'])
                 if n is not None:
                     s['where'], s['have'] = kind, n
-                    found += w.by_hash.get(s['real'], [])
+                    found += w.by_hash.get(s['real'], [])[:1]
                     break
         slots.append(s)
     has_mesh = any(e.stage in (TASK, MESH) for e in envs)
-    if has_mesh and not (h[1] and h[3]):
-        return MESH_ONLY, slots
     if w is None:
         return None, slots                               # the importer handles this shape; needs the store
     for s in slots:
@@ -295,12 +317,13 @@ def diagnose_compute(key, metas, w):
         return COMPUTE_SIZE, [s]
     cands = []
     for p in w.manifest['programs']:
-        if p['stage'] != 'compute' or w.result.get(p['code'], ('', 0))[0] == 'OK' and w.result[p['code']][1] == h:
+        if p['stage'] != 'compute':
             continue
         c = w.control(p)
-        if c and c[0] == tuple(wg) and c[1] == shared and c[2] == e.local_memory:
-            cands.append(('same workgroup, shared and local memory', p))
-    s['candidates'] = cands
+        if c and c[0] == tuple(wg) and c[1] == shared:
+            cands.append(('same workgroup and shared memory', p))
+    # the ones that failed to lower first
+    s['candidates'] = sorted(cands, key=lambda c: w.result.get(c[1]['code'], ('',))[0] == 'OK')
     return COMPUTE_MISSING, [s]
 
 
@@ -317,8 +340,6 @@ def why_slot(s, w, cause, sizes=True):
     t = f'in the {s["where"]} store'
     if s['have'] != s['size']:
         return t + (f', but with {s["have"]} bytes instead of the recorded {s["size"]}' if sizes else ', but with another code size')
-    if cause == MESH_ONLY and s['stage'] == 'mesh':
-        return t + ' under its real hash: the code exists, only the importer does not look there'
     return t
 
 
@@ -460,61 +481,61 @@ def main():
             f'{len(w.manifest["programs"])} extracted programs, {len(w.failed)} failed to lower, '
             f'{len(w.never_lowered)} never lowered, {len(w.manifest["errors"])} unreadable containers')
     else:
-        log('code store: none (--work not given). Only what the hints alone show is reported.')
+        log('code store: none (--work not given). Which pipelines are skipped depends on the code store, so only the\n'
+            'shapes of the pipelines in the hints are listed' + (' and the .nup is scanned.' if a.nup else '.'))
+        shapes = collections.Counter()
+        for (kind, ident), metas in records.items():
+            shapes['+'.join(Env(m).stage_name for m in metas)] += 1
+        for shape, n in shapes.most_common():
+            log(f'  {n:>6} pipelines: {shape}')
+
+    if w is None:
+        if a.nup and not a.no_scan:
+            log()
+            log(f'--- game file: {a.nup}')
+            scan_nup(a.nup, a.scan_all, log)
+        log(f'\nreport: {log_path}')
+        return
+    for (kind, ident), metas in records.items():           # every shader the hints refer to, by its real hash
+        if kind == 'c':
+            w.used.add(struct.unpack_from('<Q', ident, 0)[0])
+        else:
+            envs = [Env(m) for m in metas]
+            x = mesh_state_hash(envs) or 0
+            w.used.update(v ^ x if e.stage in (TASK, MESH) else v for v, e in zip([v for v in ident[0] if v], envs))
 
     # 1. which pipelines are skipped, and why
     skipped = []                                           # (index, kind, ident, cause, slots)
-    undecided = 0
-    if w is not None:
-        verdicts = H.rebuild(records, w.store, (0, 0, 0))
-    else:
-        verdicts = ((None, None, k) for k in records)
-    for index, (data, reason, (kind, ident)) in enumerate(verdicts):
+    for index, (data, reason, (kind, ident)) in enumerate(H.rebuild(records, w.store, (0, 0, 0))):
         if data is not None:
             continue
         metas = records[(kind, ident)]
         cause, slots = diagnose_graphics(ident, metas, w, reason) if kind == 'g' else diagnose_compute(ident, metas, w)
-        if cause is None:                                  # no store: the importer handles this shape
-            undecided += 1
-            continue
         skipped.append((index, kind, ident, cause, slots))
 
     log()
     log('=' * 100)
-    if w is not None:
-        log(f'RESULT: the importer rebuilds {len(records) - len(skipped)} of {len(records)} pipelines and skips {len(skipped)}.')
-    else:
-        log(f'RESULT (hints only): {len(skipped)} of {len(records)} pipelines are certain to be skipped because of their shape.\n'
-            f'The other {undecided} depend on the code store: {UNKNOWN}.')
+    log(f'RESULT: the importer rebuilds {len(records) - len(skipped)} of {len(records)} pipelines and skips {len(skipped)}.')
     by_cause = collections.defaultdict(list)
     for row in skipped:
         by_cause[row[3]].append(row)
-    for cause in (MESH_ONLY, MESH_STATE, NOT_REPRODUCED, SIZE, COUNT, COMPUTE_MISSING, COMPUTE_SIZE):
+    for cause in (MESH_STATE, NOT_REPRODUCED, SIZE, COUNT, COMPUTE_MISSING, COMPUTE_SIZE):
         if cause in by_cause:
             log(f'  {len(by_cause[cause]):>6}  {cause}')
     log('=' * 100)
 
     # 2. per cause: the distinct shaders that block pipelines
-    for cause in (MESH_ONLY, MESH_STATE, NOT_REPRODUCED, SIZE, COUNT, COMPUTE_MISSING, COMPUTE_SIZE):
+    for cause in (MESH_STATE, NOT_REPRODUCED, SIZE, COUNT, COMPUTE_MISSING, COMPUTE_SIZE):
         rows = by_cause.get(cause)
         if not rows:
             continue
         log()
         log(f'--- {len(rows)} pipelines: {cause}')
-        if cause == MESH_ONLY:
-            states = {s.get('mesh_state') for r in rows for s in r[4] if s.get('stage') == 'mesh'}
-            log('    The emulator puts a mesh shader that has no task shader into the VertexB slot and XORs its hash with\n'
-                '    MeshStateHash (shader_cache.cpp). hints.rebuild() only undoes that XOR when both slot 1 (task) and\n'
-                '    slot 3 (mesh) are set, so here it looks for the keyed hash among the vertex shaders and finds nothing.\n'
-                f'    These pipelines use {len(states)} mesh states; the real hash below is keyed hash ^ MeshStateHash.')
         blockers = collections.OrderedDict()               # (stage, real or keyed hash) -> info
         for index, kind, ident, _, slots in rows:
             age = ages.get((kind, ident), H.UNKNOWN_AGE)
             for s in slots:
-                bad = (s.get('where') is None or s.get('have') != s.get('size')) if w is not None else s.get('stage') in ('mesh', 'task')
-                if cause == MESH_ONLY:
-                    bad = s.get('stage') == 'mesh'
-                if not bad:
+                if s.get('where') is not None and s.get('have') == s.get('size'):
                     continue
                 key = (s.get('stage', '?'), s['real'] if s.get('real') is not None else s['keyed'])
                 b = blockers.setdefault(key, dict(s=s, pipelines=0, keyed=set(), age=H.UNKNOWN_AGE))
@@ -534,7 +555,10 @@ def main():
             log(f'        {why_slot(s, w, cause)}' + (f'; {s["note"]}' if 'note' in s and 'stage' in s else ''), console)
             if w is not None and s.get('where') is None:
                 cands = s.get('candidates') or []
-                if not cands:
+                if not cands and stage == 'compute':
+                    log('        no extracted compute program has this workgroup size and shared memory: the program is not in\n'
+                        '        any container the extractor could read (see the unreadable containers below)', console)
+                elif not cands:
                     log('        no extracted program matches: the shader is in a container the extractor cannot read, is not in\n'
                         '        the files that were read, or the emulator lowers it with values only known while the game runs', console)
                 for how, p in cands[:6]:

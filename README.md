@@ -26,8 +26,9 @@ GPU-specific part (driver id, driver version and three feature bits) is written 
 
 ## Results so far
 
-* Of the 32,927 pipelines in the hints, 32,429 (98.5%) can be rebuilt from the game files. The rest need
-  shaders the extractor does not reproduce and are built by the emulator when first needed.
+* Of the 32,927 pipelines in the hints, 32,912 (99.95%) can be rebuilt from the game files. The other 15 are
+  compute pipelines whose shaders are in containers the extractor cannot read; the emulator builds them
+  when first needed. `tools/diagnose_missing.py` explains every skipped pipeline.
 * A cache converted from an NVIDIA-only recording ran in Lichii v125 on an AMD card: all records loaded,
   41 of 32,908 (0.12%) were removed by the emulator for missing recorded values, and a 40 minute play
   session built 16 pipelines at runtime (the longest 109 ms).
@@ -45,7 +46,8 @@ helper programs, so nothing needs to be installed. Windows may warn about the un
 ## Use it (Linux, or from source)
 
 You need Python 3.14 (or 3.13 with `pip install backports.zstd`), `g++` with C++20, and a clone of
-[Lichii](https://github.com/zortos293/Lichii):
+[Lichii](https://github.com/zortos293/Lichii) at the build the hints were recorded with (`build-125`; newer
+builds such as `build-160` lower some mesh shaders to other code, and 369 more pipelines are skipped):
 
 ```
 python3 tools/scb_oot.py --nup "The Legend of Zelda Ocarina of Time [0400486024DEC000][v131072].nup" \
@@ -66,6 +68,7 @@ session, but a real start with it has **not been tested** yet.
 * `tools/convert_cache.py` re-stamps a cache written on another GPU so your emulator accepts it.
 * `tools/hints.py` exports, merges and imports hints. Anyone with a played cache can contribute hints.
 * `tools/build_code_store.py` regenerates the shader code from a `.nup`.
+* `tools/diagnose_missing.py` reports which pipelines cannot be rebuilt, which shader is missing and why.
 
 See `tools/README.md` and `docs/NOTES.md` for the technical details.
 
